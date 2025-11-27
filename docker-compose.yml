@@ -15,5 +15,5 @@ services:
       - MCP_DASH_DATA=/data/flows.json
       - MCP_PROXY_BIN=mcp-proxy
     volumes:
-      - ./data:/data
+      - mcp-dashboard-data:/data
     restart: unless-stopped
