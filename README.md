@@ -17,7 +17,14 @@ A web UI to create, run, and observe MCP proxies. It wraps the Go `mcp-proxy` CL
 - OpenAPI exposure (mcpo): `8003` at `/openapi/<route>`
 - MCP Inspector UI: `6274` (server side `6277`)
 
-## Quick start (Docker)
+## Quick start (one-liner)
+```bash
+npx --yes github:lucasiscovici/MCP-Proxy-Studio start
+# npx --yes github:lucasiscovici/MCP-Proxy-Studio stop
+# npx --yes github:lucasiscovici/MCP-Proxy-Studio status
+```
+
+## Quick start (docker-compose)
 ```bash
 cd web-ui-mcp-proxy
 docker-compose up --build
