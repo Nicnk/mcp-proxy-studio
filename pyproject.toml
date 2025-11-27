@@ -9,3 +9,6 @@ requires-python = ">=3.9"
 
 [project.scripts]
 mcps = "mcp_proxy_studio.bridge:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mcp_proxy_studio"]
