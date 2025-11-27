@@ -23,6 +23,7 @@ help:
 	@echo "  make build          Build docker image locally tagged with VERSION + latest"
 	@echo "  make deploy         Build + push ghcr.io image (VERSION + latest)"
 	@echo "  make release        Prompt bump (patch/minor/major) + build + deploy"
+	@echo "  make release-gh     Create GitHub Release for current TAG/VERSION (needs gh CLI)"
 	@echo "  make run            Run local image (VERSION tag)"
 	@echo "  make sh             Shell into running dev/prod container"
 	@echo "  make tag            Create annotated git tag vX.Y.Z from VERSION"
@@ -72,17 +73,26 @@ deploy: build
 	docker push $(GHCR_IMAGE):latest
 
 .PHONY: release
-release:
+release: login-docker
 	@read -p "Bump type (patch/minor/major) [patch]: " kind; \
 	kind=$${kind:-patch}; \
 	if [ "$$kind" != "patch" ] && [ "$$kind" != "minor" ] && [ "$$kind" != "major" ]; then \
 	  echo "Invalid kind: $$kind"; exit 1; \
 	fi; \
 	echo "Bumping $$kind..."; \
-	$(call bump_version,$$kind); \
-	echo "New version: $$(cat VERSION)"
-	$(MAKE) build
-	$(MAKE) deploy
+	KIND=$$kind python3 -c 'from pathlib import Path; import os; kind=os.environ.get("KIND","patch"); maj,mi,pa=map(int,Path("VERSION").read_text().strip().split(".")); maj,mi,pa={"patch":(maj,mi,pa+1),"minor":(maj,mi+1,0),"major":(maj+1,0,0)}[kind]; nv=f"{maj}.{mi}.{pa}"; Path("VERSION").write_text(nv + "\n"); print(nv)'; \
+	NEW_VERSION=$$(cat VERSION); \
+	echo "New version: $$NEW_VERSION"; \
+	$(MAKE) build VERSION=$$NEW_VERSION; \
+	$(MAKE) deploy VERSION=$$NEW_VERSION
+
+.PHONY: release-gh
+release-gh:
+	@if ! git rev-parse "$(TAG)" >/dev/null 2>&1; then \
+	  echo "Tag $(TAG) not found. Create it first (make tag or make release)."; exit 1; \
+	fi
+	@echo "Creating GitHub release $(TAG)..."
+	gh release create $(TAG) --title "$(APP_NAME) $(TAG)" --notes "Release $(TAG)" || true
 
 # .PHONY: run
 # run:
@@ -124,6 +134,15 @@ Path("VERSION").write_text(nv + "\n")
 print(nv)
 PY
 endef
+
+.PHONY: auth-refresh
+	@gh auth refresh -h github.com -s read:packages -s write:packages 
+
+.PHONY: login-docker
+login-docker:
+	@echo "Login docker..."
+	@user="$$(gh api user -q .login)"; \
+	gh auth token | docker login ghcr.io -u "$$user" --password-stdin
 
 .PHONY: bump-patch
 bump-patch:

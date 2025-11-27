@@ -48,21 +48,41 @@
 npx -y github:lucasiscovici/MCP-Proxy-Studio start
 ```
 
+### One-liner to start (uvx)
+```bash
+uvx --from git+https://github.com/lucasiscovici/MCP-Proxy-Studio@main mcps start
+```
+
 ### One-liner to stop (npx)
 ```bash
 npx -y github:lucasiscovici/MCP-Proxy-Studio stop
 ```
 
-### Others
+### One-liner to stop (uvx)
+```bash
+uvx --from git+https://github.com/lucasiscovici/MCP-Proxy-Studio@main mcps stop
+```
+
+### Others (npx)
 ```bash
 # Optional:
-# npx -y github:lucasiscovici/MCP-Proxy-Studio stop
 # npx -y github:lucasiscovici/MCP-Proxy-Studio status
 # npx -y github:lucasiscovici/MCP-Proxy-Studio update
 
 # Force replace container
 npx -y github:lucasiscovici/MCP-Proxy-Studio start --force
 npx -y github:lucasiscovici/MCP-Proxy-Studio update -- force
+```
+
+### Others (uvx)
+```bash
+# Optional:
+# uvx --from git+https://github.com/lucasiscovici/MCP-Proxy-Studio@main mcps status
+# uvx --from git+https://github.com/lucasiscovici/MCP-Proxy-Studio@main mcps update
+
+# Force replace container
+uvx --from git+https://github.com/lucasiscovici/MCP-Proxy-Studio@main mcps start --force
+uvx --from git+https://github.com/lucasiscovici/MCP-Proxy-Studio@main mcps update -- force
 ```
 
 ### Docker Compose
