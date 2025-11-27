@@ -11,9 +11,9 @@ A web UI to create, run, and observe MCP proxies. It wraps the Go `mcp-proxy` CL
 - OpenAPI bridge: auto-spawns `@ivotoby/openapi-mcp-server` helpers for OpenAPI sources
 
 ## Ports
-- Dashboard UI: `8002`
-- Streamable HTTP exposure: `8000`
-- SSE exposure: `8001`
+- Dashboard UI: `8000`
+- Streamable HTTP exposure: `8001`
+- SSE exposure: `8002`
 - OpenAPI exposure (mcpo): `8003` at `/openapi/<route>`
 - MCP Inspector UI: `6274` (server side `6277`)
 
@@ -29,7 +29,7 @@ Open `http://localhost:8002`. Data persists in `./data`.
 - Targets: `sse`, `streamable_http`, or `openapi` (no stdio target). OpenAPI source is forced to `streamable_http`.
 - Endpoints:
   - SSE target → `http://<host>:8001/<route>/sse`
-  - Streamable target → `http://<host>:8000/<route>/mcp`
+  - Streamable target → `http://<host>:8001/<route>/mcp`
   - OpenAPI target → `http://<host>:8003/openapi/<route>`
 
 ## Using the UI
