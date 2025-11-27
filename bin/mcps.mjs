@@ -6,7 +6,7 @@ import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 
 const REPO = "lucasiscovici/MCP-Proxy-Studio";
-const REF = process.env.REF || "main"; // optionnel: branche/tag/sha
+const REF = process.env.REF || "main"; 
 const PROJECT = "mcp_proxy_studio";
 
 const TMP_BASE = path.join(os.tmpdir(), "mcp-proxy-studio");
@@ -31,7 +31,6 @@ function rmrf(p) {
 
 function downloadRepo(destDir, ref) {
   fs.mkdirSync(destDir, { recursive: true });
-  // codeload marche sans git et récupère le repo complet (pas “packagé npm”)
   const url = `https://codeload.github.com/${REPO}/tar.gz/${ref}`;
   run("bash", ["-lc", `curl -fsSL "${url}" | tar -xz -C "${destDir}" --strip-components=1`]);
 }
@@ -83,23 +82,23 @@ function usage() {
   npx --yes github:${REPO} start
   npx --yes github:${REPO} status
   npx --yes github:${REPO} stop
+  npx --yes github:${REPO} update
 
 Env:
   REF=main|tag|sha   (optional)
 Flags:
-  --refresh          re-télécharge le repo dans le tmp
+  --refresh          Re‑download the repo into `/tmp`
 `);
 }
 
 const cmd = process.argv[2];
 const refresh = process.argv.includes("--refresh");
 
-if (!cmd || !["start", "status", "stop"].includes(cmd)) {
+if (!cmd || !["start", "status", "stop", "update"].includes(cmd)) {
   usage();
   process.exit(cmd ? 1 : 0);
 }
 
-// répertoire tmp “stable” basé sur repo+ref
 const tmpDir = path.join(TMP_BASE, `${sha1(`${REPO}@${REF}`)}`);
 
 if (refresh || !fs.existsSync(path.join(tmpDir, ".gitignore")) && !fs.existsSync(STATE)) {
@@ -109,7 +108,6 @@ if (refresh || !fs.existsSync(path.join(tmpDir, ".gitignore")) && !fs.existsSync
 
   fs.writeFileSync(STATE, JSON.stringify({ repo: REPO, ref: REF, tmpDir }, null, 2), "utf8");
 } else if (!fs.existsSync(tmpDir)) {
-  // cas: tmp nettoyé entre temps
   downloadRepo(tmpDir, REF);
   fs.mkdirSync(path.join(tmpDir, "data"), { recursive: true });
   fs.writeFileSync(STATE, JSON.stringify({ repo: REPO, ref: REF, tmpDir }, null, 2), "utf8");
@@ -133,5 +131,12 @@ const base = [
 ];
 
 if (cmd === "start") run("docker", [...base, "up", "-d", "--build"]);
+if (cmd === "update") {
+  rmrf(tmpDir);
+  downloadRepo(tmpDir, REF);
+  fs.mkdirSync(path.join(tmpDir, "data"), { recursive: true });
+  fs.writeFileSync(STATE, JSON.stringify({ repo: REPO, ref: REF, tmpDir }, null, 2), "utf8");
+  run("docker", [...base, "up", "-d", "--build"]);
+}
 if (cmd === "status") run("docker", [...base, "ps"]);
 if (cmd === "stop") run("docker", [...base, "down"]);
