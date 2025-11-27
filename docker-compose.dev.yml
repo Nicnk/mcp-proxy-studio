@@ -1,9 +1,9 @@
-name: mcp-proxy-studio
-
 services:
-  mcp-proxy-studio:
-    image: ghcr.io/lucasiscovici/mcp-proxy-studio:${MCP_PROXY_STUDIO_VERSION:-latest}
-    restart: unless-stopped
+  mcp-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: mcp-dashboard-dev
     ports:
       - "8000:8000"  # Dashboard UI
       - "8001:8001"  # Streamable HTTP
@@ -18,7 +18,10 @@ services:
       # - MCP_INSPECTOR_BIN=npx -y @modelcontextprotocol/inspector
       - MCP_DASH_DATA=/data/flows.json
     volumes:
-      - mcp-dashboard-data:/data
+      - ./data:/data
+      - ./backend:/app/backend
+      - ./frontend:/app/frontend
+    restart: unless-stopped
 
 volumes:
   mcp-dashboard-data:
