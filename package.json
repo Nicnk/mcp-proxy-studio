@@ -1,0 +1,6 @@
+{
+  "name": "mcp-proxy-studio",
+  "private": true,
+  "type": "module",
+  "bin": "./bin/mcps.mjs"
+}
