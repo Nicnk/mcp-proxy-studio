@@ -2,18 +2,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// repoRoot = racine du package (../.. si bin/ est à la racine)
-const repoRoot = path.resolve(__dirname, "..");
-
+const REPO = "lucasiscovici/MCP-Proxy-Studio";
+const REF = process.env.REF || "main"; // optionnel: branche/tag/sha
 const PROJECT = "mcp_proxy_studio";
-const TMP_DIR = path.join(os.tmpdir(), "mcp-proxy-studio"); // stable
-const MARKER = path.join(TMP_DIR, ".mcps-installed");
+
+const TMP_BASE = path.join(os.tmpdir(), "mcp-proxy-studio");
+const STATE = path.join(TMP_BASE, ".mcps-state.json");
 
 function run(cmd, args, opts = {}) {
   const r = spawnSync(cmd, args, { stdio: "inherit", ...opts });
@@ -21,57 +18,76 @@ function run(cmd, args, opts = {}) {
     console.error(`[error] ${cmd}: ${r.error.message}`);
     process.exit(1);
   }
-  process.exitCode = r.status ?? 0;
-  if (r.status !== 0) process.exit(r.status ?? 1);
+  if ((r.status ?? 0) !== 0) process.exit(r.status ?? 1);
 }
 
-function pickComposeFile(baseDir) {
-  const candidates = ["compose.yaml", "compose.yml", "docker-compose.yml", "docker-compose.yaml"];
-  for (const f of candidates) {
-    const p = path.join(baseDir, f);
-    if (fs.existsSync(p)) return p;
+function sha1(s) {
+  return crypto.createHash("sha1").update(s).digest("hex").slice(0, 10);
+}
+
+function rmrf(p) {
+  fs.rmSync(p, { recursive: true, force: true });
+}
+
+function downloadRepo(destDir, ref) {
+  fs.mkdirSync(destDir, { recursive: true });
+  // codeload marche sans git et récupère le repo complet (pas “packagé npm”)
+  const url = `https://codeload.github.com/${REPO}/tar.gz/${ref}`;
+  run("bash", ["-lc", `curl -fsSL "${url}" | tar -xz -C "${destDir}" --strip-components=1`]);
+}
+
+const COMPOSE_NAMES = new Set([
+  "compose.yaml", "compose.yml",
+  "docker-compose.yaml", "docker-compose.yml"
+]);
+
+function findCompose(dir, maxDepth = 5) {
+  const queue = [{ d: dir, depth: 0 }];
+  const found = [];
+
+  while (queue.length) {
+    const { d, depth } = queue.shift();
+    let entries;
+    try {
+      entries = fs.readdirSync(d, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const e of entries) {
+      const p = path.join(d, e.name);
+      if (e.isFile() && COMPOSE_NAMES.has(e.name)) found.push(p);
+      if (!e.isDirectory()) continue;
+      if (depth >= maxDepth) continue;
+
+      // ignore obvious heavy dirs
+      if (e.name === "node_modules" || e.name === ".git" || e.name === "dist" || e.name === "build") continue;
+      queue.push({ d: p, depth: depth + 1 });
+    }
   }
-  return null;
-}
 
-function syncToTmp() {
-  fs.mkdirSync(TMP_DIR, { recursive: true });
-
-  // Copie le repo npx (cache) vers /tmp (stable) pour que stop/status marche à coup sûr
-  // (fs.cpSync nécessite Node 16+)
-  fs.cpSync(repoRoot, TMP_DIR, {
-    recursive: true,
-    force: true,
-    // évite de copier node_modules si jamais présent
-    filter: (src) => !src.includes(`${path.sep}node_modules${path.sep}`),
+  // scoring: prefer root-level compose, then shortest path
+  found.sort((a, b) => {
+    const ra = path.relative(dir, a).split(path.sep).length;
+    const rb = path.relative(dir, b).split(path.sep).length;
+    const aRoot = ra === 1 ? -100 : 0;
+    const bRoot = rb === 1 ? -100 : 0;
+    return (aRoot + ra) - (bRoot + rb);
   });
 
-  fs.mkdirSync(path.join(TMP_DIR, "data"), { recursive: true }); // pour volumes: ./data:/data
-  fs.writeFileSync(MARKER, new Date().toISOString(), "utf8");
-}
-
-function ensureTmpReady() {
-  // Si pas installé, on synchronise
-  if (!fs.existsSync(MARKER)) syncToTmp();
-}
-
-function composeBaseArgs(composePath) {
-  return [
-    "compose",
-    "--project-directory", TMP_DIR,
-    "-f", composePath,
-    "-p", PROJECT
-  ];
+  return found[0] || null;
 }
 
 function usage() {
   console.log(`Usage:
-  npx github:lucasiscovici/MCP-Proxy-Studio start
-  npx github:lucasiscovici/MCP-Proxy-Studio status
-  npx github:lucasiscovici/MCP-Proxy-Studio stop
+  npx --yes github:${REPO} start
+  npx --yes github:${REPO} status
+  npx --yes github:${REPO} stop
 
-Options:
-  --refresh   (re-copie le repo dans /tmp)
+Env:
+  REF=main|tag|sha   (optional)
+Flags:
+  --refresh          re-télécharge le repo dans le tmp
 `);
 }
 
@@ -83,21 +99,39 @@ if (!cmd || !["start", "status", "stop"].includes(cmd)) {
   process.exit(cmd ? 1 : 0);
 }
 
-if (refresh) syncToTmp();
-else ensureTmpReady();
+// répertoire tmp “stable” basé sur repo+ref
+const tmpDir = path.join(TMP_BASE, `${sha1(`${REPO}@${REF}`)}`);
 
-const composePath = pickComposeFile(TMP_DIR);
+if (refresh || !fs.existsSync(path.join(tmpDir, ".gitignore")) && !fs.existsSync(STATE)) {
+  rmrf(tmpDir);
+  downloadRepo(tmpDir, REF);
+  fs.mkdirSync(path.join(tmpDir, "data"), { recursive: true });
+
+  fs.writeFileSync(STATE, JSON.stringify({ repo: REPO, ref: REF, tmpDir }, null, 2), "utf8");
+} else if (!fs.existsSync(tmpDir)) {
+  // cas: tmp nettoyé entre temps
+  downloadRepo(tmpDir, REF);
+  fs.mkdirSync(path.join(tmpDir, "data"), { recursive: true });
+  fs.writeFileSync(STATE, JSON.stringify({ repo: REPO, ref: REF, tmpDir }, null, 2), "utf8");
+}
+
+const composePath = findCompose(tmpDir);
 if (!composePath) {
-  console.error(`Aucun fichier compose trouvé dans ${TMP_DIR} (compose.yaml/docker-compose.yml, etc.)`);
+  console.error(`Aucun fichier compose trouvé dans le repo cloné: ${tmpDir}`);
+  console.error(`Cherchés: ${Array.from(COMPOSE_NAMES).join(", ")}`);
   process.exit(1);
 }
 
-const base = composeBaseArgs(composePath);
+const projectDir = path.dirname(composePath);
+fs.mkdirSync(path.join(projectDir, "data"), { recursive: true });
 
-if (cmd === "start") {
-  run("docker", [...base, "up", "-d", "--build"]);
-} else if (cmd === "status") {
-  run("docker", [...base, "ps"]);
-} else if (cmd === "stop") {
-  run("docker", [...base, "down"]);
-}
+const base = [
+  "compose",
+  "--project-directory", projectDir,
+  "-f", composePath,
+  "-p", PROJECT
+];
+
+if (cmd === "start") run("docker", [...base, "up", "-d", "--build"]);
+if (cmd === "status") run("docker", [...base, "ps"]);
+if (cmd === "stop") run("docker", [...base, "down"]);
