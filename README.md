@@ -45,26 +45,30 @@
 
 ### One-liner to start (npx)
 ```bash
-npx --yes github:lucasiscovici/MCP-Proxy-Studio start
+npx -y github:lucasiscovici/MCP-Proxy-Studio start
 ````
 
 ### One-liner to stop (npx)
 ```bash
-npx --yes github:lucasiscovici/MCP-Proxy-Studio stop
+npx -y github:lucasiscovici/MCP-Proxy-Studio stop
 ```
 
 ### Others
 ```bash
 # Optional:
-# npx --yes github:lucasiscovici/MCP-Proxy-Studio stop
-# npx --yes github:lucasiscovici/MCP-Proxy-Studio status
-# npx --yes github:lucasiscovici/MCP-Proxy-Studio update
+# npx -y github:lucasiscovici/MCP-Proxy-Studio stop
+# npx -y github:lucasiscovici/MCP-Proxy-Studio status
+# npx -y github:lucasiscovici/MCP-Proxy-Studio update
+
+# Force replace container
+npx -y github:lucasiscovici/MCP-Proxy-Studio start --force
+npx -y github:lucasiscovici/MCP-Proxy-Studio update -- force
 ```
 
 ### Docker Compose
 
 ```bash
-git clone https://github.com/lucasiscovici/MCP-Proxy-Studio.git && cd web-ui-mcp-proxy && docker-compose up -d --build
+git clone https://github.com/lucasiscovici/MCP-Proxy-Studio.git && cd MCP-Proxy-Studio && docker-compose up -d --build
 ```
 
 Open: **[http://localhost:8000](http://localhost:8000)**
