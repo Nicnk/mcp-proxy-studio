@@ -4,7 +4,11 @@ const state = {
   onlyRunning: false,
   search: "",
   modeFilter: "all",
-  settings: { host: "0.0.0.0", sse_port: 8001, stream_port: 8001, openapi_port: 8003, inspector_public_host: "0.0.0.0" },
+  settings: { host: "0.0.0.0", 
+    sse_port: 8001, stream_port: 8001, openapi_port: 8003, 
+    sse_port_analytic: 40001, stream_port_analytic: 40001, openapi_port_analytic: 40003, 
+    inspector_public_host: "0.0.0.0", enable_analytics: false, analytics_port: 4000
+  },
   autoStart: false,
   formVisible: false,
   autoStartedSession: false,
@@ -57,6 +61,7 @@ const el = {
   formTitle: document.getElementById("form-title"),
   resetForm: document.getElementById("reset-form"),
   startAll: document.getElementById("start-all"),
+  refreshFlows: document.getElementById("refresh-flows"),
   autoStartToggle: document.getElementById("auto-start"),
   formModal: document.getElementById("form-modal"),
   toggleForm: document.getElementById("toggle-form"),
@@ -69,6 +74,9 @@ const el = {
   persistEventsToggle: document.getElementById("persist-events"),
   autoStartInspectorToggle: document.getElementById("auto-start-inspector"),
   inspectorHost: document.getElementById("inspector-host"),
+  enableAnalytics: document.getElementById("enable-analytics"),
+  targetPortsText: document.getElementById("target-ports-text"),
+  openAnalytics: document.getElementById("open-analytics"),
   // showOnlyRunning: document.getElementById("show-only-running"),
   search: document.getElementById("search"),
   modeFilter: document.getElementById("mode-filter"),
@@ -93,6 +101,7 @@ const el = {
   statsError: document.getElementById("stat-error"),
   toastMessage: document.getElementById("toast-message"),
   toastClose: document.getElementById("toast-close"),
+  flowAutoStart: document.getElementById("flow-auto-start"),
   stats: {
     running: document.getElementById("stat-running"),
     total: document.getElementById("stat-total"),
@@ -136,6 +145,7 @@ function serializeForm() {
     env: parseEnv(field("env").value),
     headers: parseHeaders(field("headers").value),
     allow_origins: parseList(field("allow_origins").value),
+    auto_start: el.flowAutoStart?.checked ?? true,
   };
 }
 
@@ -303,6 +313,12 @@ async function loadFlows(log = true, forceLog = false) {
   const bootId = state.bootId;
   const shouldAuto = autoKey && bootId && !state.autoStartedSession && bootKey !== bootId;
   if (shouldAuto) {
+    try {
+      await fetchJSON("/api/flows/start-all", { method: "POST" });
+      pushFeed("info", "Auto-start: all flows started");
+    } catch (err) {
+      pushFeed("error", `Auto-start failed: ${err.message}`);
+    }
       state.autoStartingFlows = true;
     }
     state.flows = data;
@@ -330,13 +346,26 @@ async function loadFlows(log = true, forceLog = false) {
 async function loadSettings() {
   try {
     const settings = await fetchJSON("/api/settings");
-    state.settings = settings;
+    state.settings = { ...state.settings, ...settings };
     if (el.inspectorHost) {
       el.inspectorHost.value = settings.inspector_public_host || "localhost";
     }
+    if (el.enableAnalytics) {
+      el.enableAnalytics.checked = settings.enable_analytics !== false;
+    }
+    renderTargetPorts();
   } catch (err) {
     pushFeed("error", `Settings error: ${err.message}`);
   }
+}
+
+function renderTargetPorts() {
+  if (!el.targetPortsText || !state.settings) return;
+  const http = state.settings.stream_port;
+  const sse = state.settings.sse_port;
+  const openapi = state.settings.openapi_port;
+  const analytics = 4000; // analytics server port is fixed
+  el.targetPortsText.textContent = `HTTP: ${http} · SSE: ${sse} · OpenAPI: ${openapi} · Analytics: ${analytics}`;
 }
 
 async function loadStatus() {
@@ -349,8 +378,28 @@ async function loadStatus() {
 }
 
 async function saveSettings() {
-  // Settings are fixed; no-op
-  pushFeed("info", "Ports and host are fixed (SSE:8002, Stream:8001)");
+  try {
+    const payload = {
+      host: state.settings.host,
+      sse_port: state.settings.sse_port,
+      stream_port: state.settings.stream_port,
+      openapi_port: state.settings.openapi_port,
+      inspector_public_host: state.settings.inspector_public_host,
+      enable_analytics: state.settings.enable_analytics !== false,
+    };
+    const saved = await fetchJSON("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    state.settings = { ...state.settings, ...saved };
+    pushFeed(
+      "info",
+      `Settings saved (targets: HTTP ${state.settings.stream_port}, SSE ${state.settings.sse_port}, OpenAPI ${state.settings.openapi_port})`
+    );
+    await loadFlows(false, true);
+  } catch (err) {
+    pushFeed("error", `Settings save failed: ${err.message}`);
+  }
 }
 
 function renderStats() {
@@ -510,12 +559,20 @@ function renderFlows() {
       flow.target_type === "openapi"
         ? state.settings.inspector_public_host || state.settings.host
         : state.settings.host;
-    const port =
+    let port =
       flow.target_type === "streamable_http"
         ? state.settings.stream_port
         : flow.target_type === "openapi"
         ? state.settings.openapi_port
         : state.settings.sse_port;
+    
+    if (state.settings.enable_analytics)
+      port = flow.target_type === "streamable_http"
+        ? state.settings.stream_port_analytic
+        : flow.target_type === "openapi"
+        ? state.settings.openapi_port_analytic
+        : state.settings.sse_port_analytic;
+
     const route = flow.route || flow.name;
     const exposedPath =
       flow.target_type === "openapi"
@@ -544,11 +601,6 @@ function renderFlows() {
           <span class="status ${failMessage ? "status--error" : flow.state.running ? "status--on" : "status--off"}">
             ${failMessage ? "Error" : flow.state.running ? "Running" : "Stopped"}
           </span>
-          <label class="switch switch--compact switch--text auto-start-switch" title="Auto-start">
-            <input type="checkbox" data-action="auto-start" data-id="${flow.id}" ${flow.auto_start !== false ? "checked" : ""} ${state.autoStartingFlows ? "disabled" : ""}>
-            <span class="slider"></span>
-            <span class="switch__label">Auto-start</span>
-          </label>
         </div>
       </div>
       <p class="flow-card__description">${flow.description || "No description"}</p>
@@ -602,14 +654,9 @@ function renderFlows() {
 
 async function handleCardAction(ev, flow) {
   const button = ev.target.closest("button");
-  const autoToggle = ev.target.matches('input[data-action="auto-start"]');
-  if (!button && !autoToggle) return;
+  if (!button) return;
   if (state.autoStartingFlows || state.stoppingAllFlows) {
     pushFeed("info", "Bulk action in progress, please wait...");
-    return;
-  }
-  if (autoToggle) {
-    await updateAutoStart(flow, ev.target.checked);
     return;
   }
   const action = button.dataset.action;
@@ -722,6 +769,9 @@ function fillForm(flow) {
   field("headers").value = (flow.headers || [])
     .map((h) => `${h.key}: ${h.value}`)
     .join("\n");
+  if (el.flowAutoStart) {
+    el.flowAutoStart.checked = flow.auto_start !== false;
+  }
   updateTargetOptions();
   syncTransportFields();
   state.formVisible = true;
@@ -737,6 +787,7 @@ function resetForm() {
   field("source_type").value = "sse";
   field("target_type").value = "sse";
   field("route").value = "";
+  if (el.flowAutoStart) el.flowAutoStart.checked = true;
   setAllowOrigins([]);
   updateTargetOptions();
   syncTransportFields();
@@ -1276,7 +1327,9 @@ function buildInspectorUrl(flow) {
   if (flow) {
     const isStream = flow.target_type === "streamable_http";
     const isOpenApi = flow.target_type === "openapi";
-    const targetPort = isOpenApi ? state.settings.openapi_port : isStream ? state.settings.stream_port : state.settings.sse_port;
+    let targetPort = isOpenApi ? state.settings.openapi_port : isStream ? state.settings.stream_port : state.settings.sse_port;
+    if (state.settings.enable_analytics)
+      targetPort=isOpenApi ? state.settings.openapi_port_analytic : isStream ? state.settings.stream_port_analytic : state.settings.sse_port_analytic;
     const endpointPath = isOpenApi ? "openapi" : isStream ? "mcp" : "sse";
     const targetHost = isOpenApi
       ? state.settings.inspector_public_host || "host.docker.internal"
@@ -1290,7 +1343,7 @@ function buildInspectorUrl(flow) {
 
 function buildOpenApiDocsUrl(flow) {
   const host = state.settings.inspector_public_host || state.settings.host || "localhost";
-  const port = state.settings.openapi_port;
+  const port = state.settings.enable_analytics ? state.settings.openapi_port_analytic : state.settings.openapi_port;
   const route = flow.route || flow.name;
   return `http://${host}:${port}/${route}/docs`;
 }
@@ -1503,6 +1556,14 @@ function bindEvents() {
     renderStats();
     openInspectorAction();
   });
+  el.openAnalytics.addEventListener("click", () => {
+    window.open(`http://${state.settings.host}:${state.settings.analytics_port}`, "_blank")
+  })
+  if (el.refreshFlows) {
+    el.refreshFlows.addEventListener("click", () => {
+      loadFlows(true, true);
+    });
+  }
   if (el.startAll) {
     el.startAll.addEventListener("click", () => {
       if (state.autoStartingFlows || state.stoppingAllFlows) {
@@ -1607,6 +1668,12 @@ function bindEvents() {
     el.autoStartInspectorToggle.addEventListener("change", (e) => {
       state.autoStartInspector = e.target.checked;
       localStorage.setItem("mcp_auto_start_inspector", state.autoStartInspector ? "1" : "0");
+    });
+  }
+  if (el.enableAnalytics) {
+    el.enableAnalytics.addEventListener("change", async (e) => {
+      state.settings.enable_analytics = e.target.checked;
+      await saveSettings();
     });
   }
   if (el.inspectorHost) {
@@ -1749,6 +1816,7 @@ async function boot() {
   await refreshInspectorButton();
   connectEvents();
   renderFeed();
+  openAnalytics.style.display=state.settings.enable_analytics ? "block" : "none";
 }
 
 boot();

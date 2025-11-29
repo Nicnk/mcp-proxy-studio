@@ -4,7 +4,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=8000 \
     MCP_DASH_DATA=/data/flows.json \
-    PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
+    PATH="/usr/local/go/bin:/root/go/bin:${PATH}" \
+    NODE_ENV=production
 
 WORKDIR /app
 
@@ -20,22 +21,24 @@ RUN apt-get update && \
 COPY backend/requirements.txt ./backend/requirements.txt
 RUN pip install --no-cache-dir -r backend/requirements.txt && pip install --no-cache-dir uv
 
-# Install Go mcp-proxy CLI (pinning recommended via build arg later)
+# Install Go mcp-proxy CLI (optional)
 RUN GO111MODULE=on GOBIN=/usr/local/bin go install github.com/TBXark/mcp-proxy@latest
 
-# Build local Node mcp-proxy (deps managed at repo root)
+# Proxy build (Node)
 WORKDIR /app
 COPY package.json tsconfig.proxy.json ./
 COPY mcp-proxy ./mcp-proxy
 RUN npm install --include=dev \
     && npm run proxy:build
 
-# App code
+# Runtime layout
+WORKDIR /app
 COPY backend ./backend
 COPY frontend ./frontend
+COPY studio/start-all.sh /app/start-all.sh
 
-RUN mkdir -p /data
+RUN chmod +x /app/start-all.sh && mkdir -p /data /app/mcp-proxy/config
 
 EXPOSE 8000 8001 8002 8003 6274 6277 4000 40001 40002 40003
 
-CMD ["uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/app/start-all.sh"]

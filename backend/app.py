@@ -45,6 +45,30 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("mcp-dashboard")
 
 
+def _rewrite_local_port(url: str, port_map: Dict[int, int], allowed_hosts: set[str]) -> str:
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return url
+    host = parsed.hostname or ""
+    if host not in allowed_hosts:
+        return url
+    port = parsed.port
+    if port is None:
+        return url
+    new_port = port_map.get(port)
+    if not new_port or new_port == port:
+        return url
+    netloc = f"{host}:{new_port}"
+    if parsed.username or parsed.password:
+        auth = parsed.username or ""
+        if parsed.password:
+            auth += f":{parsed.password}"
+        netloc = f"{auth}@{netloc}"
+    updated = parsed._replace(netloc=netloc)
+    return urlunparse(updated)
+
+
 class FlowMode(str, Enum):
     STDIO_TO_SSE = "stdio_to_sse"
     SSE_TO_STDIO = "sse_to_stdio"
@@ -844,7 +868,6 @@ app.add_middleware(
 if FRONTEND_DIR.exists():
     app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
-
 @app.on_event("startup")
 async def auto_start_inspector() -> None:
     try:
@@ -1002,17 +1025,37 @@ class SettingsUpdate(BaseModel):
     sse_port: int = 8002
     stream_port: int = 8001
     inspector_public_host: str = "localhost"
+    enable_analytics: bool = False
 
 
 @app.put("/api/settings", response_model=Settings)
 async def update_settings(payload: SettingsUpdate) -> Settings:
-    return Settings(
+    updated = Settings(
         host=payload.host,
         sse_port=payload.sse_port,
         stream_port=payload.stream_port,
         inspector_public_host=payload.inspector_public_host,
         openapi_port=getattr(payload, "openapi_port", Settings().openapi_port),
+        enable_analytics=payload.enable_analytics,
     )
+    return await settings_store.set(updated)
+
+
+@app.post("/api/flows/start-all", response_model=Dict[str, Any])
+async def start_all_flows() -> Dict[str, Any]:
+    flows = await store.list()
+    started: List[str] = []
+    errors: List[Dict[str, str]] = []
+    for flow in flows:
+        if getattr(flow, "auto_start", True) is False:
+            continue
+        try:
+            await manager.start(flow)
+            started.append(flow.id)
+        except Exception as exc:
+            logger.warning("Auto-start (API) flow %s failed: %s", flow.id, exc)
+            errors.append({"id": flow.id, "error": str(exc)})
+    return {"started": started, "errors": errors}
 
 
 @app.post("/api/flows/{flow_id}/start", response_model=Dict[str, Any])

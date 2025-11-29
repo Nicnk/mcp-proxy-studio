@@ -2,5 +2,22 @@
   "name": "mcp-proxy-studio",
   "private": true,
   "type": "module",
-  "bin": "./bin/mcps.mjs"
+  "bin": "./bin/mcps.mjs",
+  "scripts": {
+    "proxy:dev": "tsx watch --tsconfig tsconfig.proxy.json mcp-proxy/cli.ts proxy --config mcp-proxy/config.example.json --server-url http://localhost:4000 --hot-reload",
+    "proxy:build": "tsc -p tsconfig.proxy.json",
+    "proxy:start": "node mcp-proxy/dist/cli.js"
+  },
+  "dependencies": {
+    "chokidar": "^3.6.0",
+    "commander": "^12.1.0",
+    "http-proxy": "^1.18.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/http-proxy": "^1.17.15",
+    "@types/node": "^22.9.4",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3"
+  }
 }

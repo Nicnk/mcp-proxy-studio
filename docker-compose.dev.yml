@@ -11,6 +11,10 @@ services:
       - "8003:8003"  # OpenAPI exposure (mcpo)
       - "6274:6274"  # Inspector UI
       - "6277:6277"  # Inspector server
+      - "4000:4000"  # Analytics server
+      - "40001:40001"  # Proxy HTTP listener
+      - "40002:40002"  # Proxy SSE listener
+      - "40003:40003"  # Proxy OpenAPI listener
     environment:
       # Optional overrides:
       # - MCP_PROXY_BIN=mcp-proxy
@@ -21,6 +25,7 @@ services:
       - ./data:/data
       - ./backend:/app/backend
       - ./frontend:/app/frontend
+      - ./mcp-proxy:/app/mcp-proxy
     restart: unless-stopped
 
 volumes:

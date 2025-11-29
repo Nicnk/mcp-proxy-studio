@@ -1,0 +1,23 @@
+{
+  "mcp_http_server": {
+    "type": "mcp_http",
+    "host": "0.0.0.0",
+    "target_host": "0.0.0.0",
+    "target_port": 40001,
+    "port": 8001
+  },
+  "mcp_sse_server": {
+    "type": "mcp_sse",
+    "host": "0.0.0.0",
+    "port": 8002,
+    "target_host": "0.0.0.0",
+    "target_port": 40002
+  },
+  "openapi_server": {
+    "type": "openapi",
+    "host": "0.0.0.0",
+    "target_host": "0.0.0.0",
+    "target_port": 40003,
+    "port": 8003
+  }
+}

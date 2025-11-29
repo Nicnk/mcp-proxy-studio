@@ -58,6 +58,7 @@
           <button id="actions-menu" class="button button--ghost button--icon" aria-haspopup="true" aria-expanded="false" title="More inspector actions">⋯</button>
           <div id="actions-dropdown" class="dropdown hidden">
             <button id="open-inspector" class="dropdown__item" disabled>Open inspector</button>
+            <button id="open-analytics" class="dropdown__item">Open Analytics</button>
             <button id="export-flows" class="dropdown__item">Export</button>
             <button id="import-flows" class="dropdown__item">Import</button>
           </div>
@@ -88,6 +89,7 @@
             <option value="target_streamable_http">Target streamable_http</option>
             <option value="target_openapi">Target openapi</option>
           </select>
+          <button id="refresh-flows" class="button button--ghost">Refresh</button>
           <button id="start-all" class="button button--primary">Start all</button>
           <!-- <label class="switch switch--compact switch--text">
             <input type="checkbox" id="show-only-running">
@@ -122,6 +124,11 @@
             <input type="checkbox" id="persist-events">
             <span class="slider"></span>
             <span class="switch__label">Persist events</span>
+          </label>
+          <label class="switch switch--compact switch--text">
+            <input type="checkbox" id="enable-analytics">
+            <span class="slider"></span>
+            <span class="switch__label">Enable analytics</span>
           </label>
           <label class="switch switch--compact switch--text">
             <input type="checkbox" id="auto-start-inspector">
@@ -347,6 +354,30 @@
             </div>
           </div>
 
+          <div class="form-divider"></div>
+
+          <div class="form-section" id="section-advanced">
+            <div class="form-section__header">
+              <div class="form-section__title">
+                <span class="section-icon">⚙</span>
+                <div>
+                  <p class="eyebrow">Advanced</p>
+                  <p class="section-subtitle">Lifecycle & automation</p>
+                </div>
+              </div>
+            </div>
+            <div class="form-grid form-grid--one">
+              <label class="switch switch--text">
+                <input type="checkbox" id="flow-auto-start" checked>
+                <span class="slider"></span>
+                <div>
+                  <span class="switch__label">Auto-start this flow</span>
+                  <small class="helper">If enabled, the dashboard will start this flow automatically on boot/start-all.</small>
+                </div>
+              </label>
+            </div>
+          </div>
+
           <div class="modal__footer modal__footer--sticky">
             <div class="modal__footer-left">
               <button type="button" class="button button--ghost" id="cancel-form">Cancel</button>
@@ -379,6 +410,11 @@
         <span class="slider"></span>
         <span class="switch__label">Persist events</span>
       </label>
+      <label class="switch switch--compact switch--text">
+        <input type="checkbox" id="enable-analytics" checked>
+        <span class="slider"></span>
+        <span class="switch__label">Enable analytics</span>
+      </label>
         <label class="switch switch--compact switch--text">
           <input type="checkbox" id="auto-start-inspector">
           <span class="slider"></span>
@@ -388,6 +424,10 @@
           <span>Inspector host</span>
           <input type="text" id="inspector-host" placeholder="localhost or host.docker.internal">
         </label>
+      <div class="settings-ports">
+        <p class="muted meta-label">Target ports</p>
+        <p class="small-text" id="target-ports-text"></p>
+      </div>
       </div>
     </section>
 

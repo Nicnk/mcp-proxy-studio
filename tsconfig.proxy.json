@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "outDir": "mcp-proxy/dist",
+    "rootDir": "mcp-proxy",
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "types": ["node"]
+  },
+  "include": ["mcp-proxy/**/*.ts"],
+  "exclude": ["mcp-proxy/dist"]
+}

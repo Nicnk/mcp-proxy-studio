@@ -20,8 +20,19 @@ RUN pip install --no-cache-dir -r backend/requirements.txt && pip install --no-c
 
 RUN GO111MODULE=on GOBIN=/usr/local/bin go install github.com/TBXark/mcp-proxy@latest
 
+# Build local Node mcp-proxy (deps managed at repo root)
+WORKDIR /app
+COPY package.json tsconfig.proxy.json ./
+COPY mcp-proxy ./mcp-proxy
+RUN npm install --include=dev \
+    && npm run proxy:build
+
+COPY studio/start-all.sh /app/start-all.sh
+COPY studio/start-dev.sh /app/start-dev.sh
+RUN chmod +x /app/start-all.sh /app/start-dev.sh && mkdir -p /data /app/mcp-proxy/config
+
 RUN mkdir -p /data
 
-EXPOSE 8000 8001 8002 8003 6274 6277
+EXPOSE 8000 8001 8002 8003 6274 6277 4000 40001 40002 40003
 
-CMD ["uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["/app/start-dev.sh"]

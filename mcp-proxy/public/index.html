@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>MCP Studio Analytics</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #0b1224;
+        --card: #111a2f;
+        --panel: #0c1627;
+        --text: #e2e8f0;
+        --muted: #94a3b8;
+        --ok: #22c55e;
+        --error: #f43f5e;
+        --accent: #38bdf8;
+        --accent-2: #a855f7;
+        --border: rgba(148, 163, 184, 0.2);
+      }
+      body {
+        margin: 0;
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: radial-gradient(circle at 20% 20%, #1b2742, #0b1224 45%), var(--bg);
+        color: var(--text);
+      }
+      header {
+        padding: 16px 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: rgba(11, 18, 36, 0.9);
+        border-bottom: 1px solid var(--border);
+        backdrop-filter: blur(8px);
+        position: sticky;
+        top: 0;
+        z-index: 2;
+      }
+      h1 {
+        margin: 0;
+        font-size: 18px;
+        letter-spacing: 0.02em;
+      }
+      nav {
+        display: flex;
+        gap: 8px;
+      }
+      .tab-btn {
+        background: transparent;
+        color: var(--muted);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 6px 12px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      .tab-btn.active {
+        background: rgba(56, 189, 248, 0.15);
+        color: var(--text);
+        border-color: rgba(56, 189, 248, 0.6);
+      }
+      .meta {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      main {
+        padding: 16px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      }
+      .card h2 {
+        margin: 0 0 8px 0;
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+      }
+      .stat-value {
+        font-size: 22px;
+        font-weight: 700;
+      }
+      .stat-sub {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      th,
+      td {
+        padding: 8px 10px;
+        text-align: left;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+      }
+      th {
+        color: var(--muted);
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 11px;
+        letter-spacing: 0.04em;
+      }
+      tbody tr:hover {
+        background: rgba(56, 189, 248, 0.08);
+      }
+      .status-ok {
+        color: var(--ok);
+        font-weight: 700;
+      }
+      .status-error {
+        color: var(--error);
+        font-weight: 700;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: rgba(56, 189, 248, 0.14);
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .pill.alt {
+        background: rgba(168, 85, 247, 0.14);
+        color: var(--accent-2);
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .attrs {
+        max-width: 360px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: var(--muted);
+      }
+      .row-meta {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+      .status-ok-dot {
+        background: var(--ok);
+      }
+      .status-error-dot {
+        background: var(--error);
+      }
+      .section {
+        display: none;
+      }
+      .section.active {
+        display: block;
+      }
+      .toolbar {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin: 12px 0;
+      }
+      .input {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        color: var(--text);
+        padding: 6px 10px;
+        border-radius: 8px;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>MCP Studio Analytics</h1>
+      <nav>
+        <button class="tab-btn active" data-tab="overview">Overview</button>
+        <button class="tab-btn" data-tab="routes">Routes</button>
+        <button class="tab-btn" data-tab="events">Events</button>
+      </nav>
+      <div class="meta">
+        <span id="count">0 spans</span>
+        <span class="muted" id="live-status">Live</span>
+      </div>
+    </header>
+    <main>
+      <section class="section active" id="tab-overview">
+        <div class="grid" id="stats">
+          <div class="card">
+            <h2>Requêtes reçues</h2>
+            <div class="stat-value" id="stat-total">0</div>
+            <div class="stat-sub" id="stat-total-sub">Depuis le démarrage</div>
+          </div>
+          <div class="card">
+            <h2>Succès</h2>
+            <div class="stat-value status-ok" id="stat-ok">0</div>
+            <div class="stat-sub" id="stat-ok-rate">0%</div>
+          </div>
+          <div class="card">
+            <h2>Erreurs</h2>
+            <div class="stat-value status-error" id="stat-error">0</div>
+            <div class="stat-sub" id="stat-error-rate">0%</div>
+          </div>
+          <div class="card">
+            <h2>Latence moyenne</h2>
+            <div class="stat-value" id="stat-latency">0 ms</div>
+            <div class="stat-sub" id="stat-latency-sub">Sur les dernières 400 requêtes</div>
+          </div>
+        </div>
+        <div class="card">
+          <h2 style="margin-bottom:8px;">Routes</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Route</th>
+                <th>Total</th>
+                <th>Succès</th>
+                <th>Erreurs</th>
+                <th>Latence moy.</th>
+                <th>Dernier status</th>
+              </tr>
+            </thead>
+            <tbody id="route-rows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section" id="tab-routes">
+        <div class="toolbar">
+          <input class="input" id="filter-route" placeholder="Filtrer par route..." />
+          <select class="input" id="filter-transport">
+            <option value="all">Transport: tous</option>
+            <option value="sse">SSE</option>
+            <option value="http">HTTP</option>
+            <option value="openapi">OpenAPI</option>
+          </select>
+          <select class="input" id="filter-status">
+            <option value="all">Status: tous</option>
+            <option value="OK">OK</option>
+            <option value="ERROR">Erreur</option>
+          </select>
+        </div>
+        <div class="card">
+          <table>
+            <thead>
+              <tr>
+                <th>Route</th>
+                <th>Span</th>
+                <th>Status</th>
+                <th>Transport</th>
+                <th>Durée</th>
+                <th>Requête</th>
+                <th>Réponse</th>
+              </tr>
+            </thead>
+            <tbody id="route-details"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section" id="tab-events">
+        <div class="card">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Span</th>
+                <th>Status</th>
+                <th>Route</th>
+                <th>Transport</th>
+                <th>Upstream</th>
+                <th>Durée</th>
+                <th>Requête</th>
+                <th>Réponse</th>
+                <th>Attrs</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </section>
+
+    </main>
+    <script>
+      const rowsEl = document.getElementById("rows");
+      const countEl = document.getElementById("count");
+      const statTotal = document.getElementById("stat-total");
+      const statTotalSub = document.getElementById("stat-total-sub");
+      const statOk = document.getElementById("stat-ok");
+      const statOkRate = document.getElementById("stat-ok-rate");
+      const statError = document.getElementById("stat-error");
+      const statErrorRate = document.getElementById("stat-error-rate");
+      const statLatency = document.getElementById("stat-latency");
+      const liveStatus = document.getElementById("live-status");
+      const routeRows = document.getElementById("route-rows");
+      const routeDetails = document.getElementById("route-details");
+      const filterRoute = document.getElementById("filter-route");
+      const filterTransport = document.getElementById("filter-transport");
+  const filterStatus = document.getElementById("filter-status");
+
+  const tabs = document.querySelectorAll(".tab-btn");
+  const sections = document.querySelectorAll(".section");
+
+      const STATE = {
+        spans: [],
+        max: 400,
+        es: null,
+        retry: 0,
+        filters: { route: "", transport: "all", status: "all" }
+      };
+
+  function fmtTime(ts) {
+    const d = new Date(ts);
+    return d.toLocaleTimeString();
+  }
+
+  function setTab(tab) {
+    tabs.forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === tab));
+    sections.forEach((sec) => sec.classList.toggle("active", sec.id === `tab-${tab}`));
+  }
+
+      function flatten(payloads) {
+        const spans = [];
+        for (const entry of payloads) {
+          const { ts, payload } = entry;
+          if (!payload) continue;
+          const list = Array.isArray(payload.events) ? payload.events : [];
+          for (const ev of list) {
+            if (ev.type === "span") spans.push({ ts, span: ev });
+          }
+        }
+        return spans;
+      }
+
+      function computeStats(spans) {
+        const total = spans.length;
+        const ok = spans.filter((s) => s.span.status === "OK").length;
+        const error = total - ok;
+        const rate = total ? Math.round((ok / total) * 100) : 0;
+        const errorRate = total ? Math.round((error / total) * 100) : 0;
+        const latencies = spans
+          .map(({ span }) => (span.endTimeMs ?? 0) - (span.startTimeMs ?? 0))
+          .filter((v) => Number.isFinite(v) && v >= 0);
+        const avgLatency = latencies.length
+          ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length)
+          : 0;
+        return { total, ok, error, rate, errorRate, avgLatency };
+      }
+
+      function computeRoutes(spans) {
+        const byRoute = new Map();
+        for (const { span } of spans) {
+          const attrs = span.attributes || {};
+          const route = attrs["mcp.route_name"] ?? "<default>";
+          if (!byRoute.has(route)) byRoute.set(route, { route, total: 0, ok: 0, err: 0, latencies: [], last: null });
+          const entry = byRoute.get(route);
+          entry.total += 1;
+          const isOk = span.status === "OK";
+          entry.ok += isOk ? 1 : 0;
+          entry.err += isOk ? 0 : 1;
+          const duration = (span.endTimeMs ?? 0) - (span.startTimeMs ?? 0);
+          if (Number.isFinite(duration) && duration >= 0) entry.latencies.push(duration);
+          entry.last = span;
+        }
+        return Array.from(byRoute.values()).map((r) => {
+          const avg = r.latencies.length ? Math.round(r.latencies.reduce((a, b) => a + b, 0) / r.latencies.length) : 0;
+          return { ...r, avg };
+        });
+      }
+
+      function render(spans) {
+        rowsEl.innerHTML = spans
+          .map(({ ts, span }) => {
+            const attrs = span.attributes || {};
+            const route = attrs["mcp.route_name"] ?? "";
+            const transport = attrs["mcp.transport"] ?? "";
+            const upstream = attrs["upstream.url"] ?? "";
+            const method = attrs["http.request.method"] ?? "";
+            const path = attrs["url.path"] ?? "";
+            const statusCode = attrs["http.response.status_code"] ?? "";
+            const proto = attrs["mcp.protocol"] ?? "";
+            const routeDisplay = route || "<default>";
+            const reqBody = attrs["http.request.body"] ?? "";
+            const resBody = attrs["http.response.body"] ?? "";
+            const duration = (span.endTimeMs ?? 0) - (span.startTimeMs ?? 0);
+            const attrString = Object.entries(attrs)
+              .map(([k, v]) => `${k}=${v}`)
+              .join(" · ");
+            const statusClass = span.status === "OK" ? "status-ok" : "status-error";
+            const dotClass = span.status === "OK" ? "status-ok-dot" : "status-error-dot";
+            return `
+              <tr>
+                <td>${fmtTime(ts)}</td>
+                <td><span class="pill">${span.name}</span></td>
+                <td class="${statusClass}"><span class="status-dot ${dotClass}"></span> ${span.status} ${statusCode}</td>
+                <td>${routeDisplay}</td>
+                <td class="row-meta">
+                  <span class="pill">${transport}</span>
+                  <span class="pill alt">${proto}</span>
+                  <span class="pill alt">${method || "REQ"}</span>
+                  <span class="muted">${path}</span>
+                </td>
+                <td class="muted">${upstream}</td>
+                <td class="muted">${duration} ms</td>
+                <td class="attrs" title="${reqBody}">${reqBody || "<empty>"}</td>
+                <td class="attrs" title="${resBody}">${resBody || "<empty>"}</td>
+                <td class="attrs" title="${attrString}">${attrString}</td>
+              </tr>
+            `;
+          })
+          .join("");
+        countEl.textContent = `${spans.length} spans`;
+      }
+
+      function renderStats(stats) {
+        statTotal.textContent = stats.total.toString();
+        statTotalSub.textContent = "Depuis le démarrage";
+        statOk.textContent = stats.ok.toString();
+        statOkRate.textContent = `${stats.rate}%`;
+        statError.textContent = stats.error.toString();
+        statErrorRate.textContent = `${stats.errorRate}%`;
+        statLatency.textContent = `${stats.avgLatency} ms`;
+      }
+
+      function renderRoutes(routes) {
+        routeRows.innerHTML = routes
+          .map((r) => {
+            const rate = r.total ? Math.round((r.ok / r.total) * 100) : 0;
+            const lastStatus = r.last?.status ?? "";
+            const lastCode = r.last?.attributes?.["http.response.status_code"] ?? "";
+            const cls = lastStatus === "OK" ? "status-ok" : "status-error";
+            return `<tr>
+              <td>${r.route}</td>
+              <td>${r.total}</td>
+              <td class="status-ok">${r.ok}</td>
+              <td class="status-error">${r.err}</td>
+              <td>${r.avg} ms</td>
+              <td class="${cls}">${lastStatus} ${lastCode ?? ""}</td>
+            </tr>`;
+          })
+          .join("");
+      }
+
+      function renderRouteDetails(spans) {
+        routeDetails.innerHTML = spans
+          .map(({ ts, span }) => {
+            const attrs = span.attributes || {};
+            const route = attrs["mcp.route_name"] ?? "";
+            const transport = attrs["mcp.transport"] ?? "";
+            const reqBody = attrs["http.request.body"] ?? "";
+            const resBody = attrs["http.response.body"] ?? "";
+            const duration = (span.endTimeMs ?? 0) - (span.startTimeMs ?? 0);
+            const statusClass = span.status === "OK" ? "status-ok" : "status-error";
+            return `<tr>
+              <td>${route || "<default>"}</td>
+              <td><span class="pill">${span.name}</span></td>
+              <td class="${statusClass}">${span.status}</td>
+              <td>${transport}</td>
+              <td>${duration} ms</td>
+              <td class="attrs" title="${reqBody}">${reqBody || "<empty>"}</td>
+              <td class="attrs" title="${resBody}">${resBody || "<empty>"}</td>
+            </tr>`;
+          })
+          .join("");
+      }
+
+      function addSpans(newSpans) {
+        for (const s of newSpans) {
+          STATE.spans.unshift(s);
+        }
+        if (STATE.spans.length > STATE.max) {
+          STATE.spans.length = STATE.max;
+        }
+        render(STATE.spans);
+        renderStats(computeStats(STATE.spans));
+        renderRoutes(computeRoutes(STATE.spans));
+        applyFilters(); // refresh filtered view
+      }
+
+      async function fetchSnapshot() {
+        const res = await fetch("/events");
+        const data = await res.json();
+        const spans = flatten(data.events || []).slice(-STATE.max).reverse();
+        addSpans(spans);
+      }
+
+  function connectSSE() {
+    if (STATE.es) STATE.es.close();
+    const es = new EventSource("/events?stream=1");
+    STATE.es = es;
+    liveStatus.textContent = "Connecting...";
+    es.onmessage = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.data || "{}");
+        const spans = flatten([parsed]);
+        addSpans(spans);
+        STATE.retry = 0;
+        liveStatus.textContent = "Live";
+      } catch (e) {
+        console.error("bad sse data", e);
+      }
+    };
+    es.onerror = () => {
+      es.close();
+      liveStatus.textContent = "Reconnexion...";
+      const delay = Math.min(5000, 500 + STATE.retry * 500);
+      STATE.retry += 1;
+      setTimeout(connectSSE, delay);
+    };
+  }
+
+  fetchSnapshot().catch((e) => console.error("snapshot failed", e));
+  connectSSE();
+
+  // Tabs
+  tabs.forEach((btn) =>
+    btn.addEventListener("click", () => {
+      setTab(btn.dataset.tab);
+    })
+  );
+
+  function applyFilters() {
+    const filtered = STATE.spans.filter((s) => {
+      const attrs = s.span.attributes || {};
+      const route = attrs["mcp.route_name"] ?? "";
+      const transport = attrs["mcp.transport"] ?? "";
+      if (STATE.filters.route && !route.includes(STATE.filters.route)) return false;
+      if (STATE.filters.transport !== "all" && transport !== STATE.filters.transport) return false;
+      if (STATE.filters.status !== "all" && s.span.status !== STATE.filters.status) return false;
+      return true;
+    });
+    renderRouteDetails(filtered);
+  }
+
+  [filterRoute, filterTransport, filterStatus].forEach((el) =>
+    el.addEventListener("input", () => {
+      STATE.filters.route = filterRoute.value.trim();
+      STATE.filters.transport = filterTransport.value;
+      STATE.filters.status = filterStatus.value;
+      applyFilters();
+    })
+  );
+    </script>
+  </body>
+</html>
