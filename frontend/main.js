@@ -5,8 +5,8 @@ const state = {
   search: "",
   modeFilter: "all",
   settings: { host: "0.0.0.0", 
-    sse_port: 8001, stream_port: 8001, openapi_port: 8003, 
-    sse_port_analytic: 40001, stream_port_analytic: 40001, openapi_port_analytic: 40003, 
+    stream_port: 8001,  sse_port: 8002, openapi_port: 8003, 
+    stream_port_analytic: 40001, sse_port_analytic: 40002, openapi_port_analytic: 40003, 
     inspector_public_host: "0.0.0.0", enable_analytics: false, analytics_port: 4000
   },
   autoStart: false,
@@ -116,6 +116,9 @@ const formatter = new Intl.DateTimeFormat("fr-FR", {
   minute: "2-digit",
   second: "2-digit",
 });
+
+const sortFeedByTsDesc = (list = []) =>
+  list.sort((a, b) => (b?.ts ?? 0) - (a?.ts ?? 0));
 
 async function fetchJSON(url, options = {}) {
   const res = await fetch(url, {
@@ -971,6 +974,7 @@ function validateCommand() {
 
 function pushFeed(type, message, ts = Date.now() / 1000) {
   state.feed.unshift({ type, message, ts });
+  sortFeedByTsDesc(state.feed);
   if (!state.persistEvents) {
     state.feed = state.feed.slice(0, 80);
     localStorage.removeItem("mcp_feed");
@@ -1363,7 +1367,8 @@ async function openInspectorAction() {
 
 function renderFeed() {
   el.liveFeed.innerHTML = "";
-  const items = state.errorsOnly ? state.feed.filter((i) => i.type === "error") : state.feed;
+  const sorted = sortFeedByTsDesc([...state.feed]);
+  const items = state.errorsOnly ? sorted.filter((i) => i.type === "error") : sorted;
   if (!items.length) {
     el.liveFeed.innerHTML = `<div class="feed-empty">
       <strong>No events yet</strong>
@@ -1795,7 +1800,7 @@ async function boot() {
     const savedFeed = localStorage.getItem(key);
     if (savedFeed) {
       try {
-        state.feed = JSON.parse(savedFeed);
+        state.feed = sortFeedByTsDesc(JSON.parse(savedFeed));
       } catch (_) {
         state.feed = [];
       }

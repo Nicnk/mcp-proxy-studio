@@ -248,9 +248,9 @@
           <input class="input" id="filter-route" placeholder="Filtrer par route..." />
           <select class="input" id="filter-transport">
             <option value="all">Transport: tous</option>
-            <option value="sse">SSE</option>
-            <option value="http">HTTP</option>
-            <option value="openapi">OpenAPI</option>
+            <option value="mcp_sse">mcp_sse</option>
+            <option value="mcp_http">mcp_http</option>
+            <option value="openapi">openapi</option>
           </select>
           <select class="input" id="filter-status">
             <option value="all">Status: tous</option>
@@ -286,6 +286,8 @@
                 <th>Status</th>
                 <th>Route</th>
                 <th>Transport</th>
+                <th>Méthode</th>
+                <th>Session</th>
                 <th>Upstream</th>
                 <th>Durée</th>
                 <th>Requête</th>
@@ -324,13 +326,29 @@
         max: 400,
         es: null,
         retry: 0,
-        filters: { route: "", transport: "all", status: "all" }
+        filters: { route: "", transport: "all", status: "all" },
+        seen: new Set()
       };
 
   function fmtTime(ts) {
     const d = new Date(ts);
     return d.toLocaleTimeString();
   }
+
+  const sortSpansDesc = (arr = []) =>
+    arr.sort((a, b) => {
+      const aTs = a?.span?.attributes?.["mcp.sent_at_ms"] ?? a?.ts ?? 0;
+      const bTs = b?.span?.attributes?.["mcp.sent_at_ms"] ?? b?.ts ?? 0;
+      return bTs - aTs;
+    });
+
+  const escapeHtml = (s = "") =>
+    String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
 
   function setTab(tab) {
     tabs.forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === tab));
@@ -397,13 +415,18 @@
             const path = attrs["url.path"] ?? "";
             const statusCode = attrs["http.response.status_code"] ?? "";
             const proto = attrs["mcp.protocol"] ?? "";
+            const sessionId = attrs["mcp.session_id"] ?? "";
             const routeDisplay = route || "<default>";
-            const reqBody = attrs["http.request.body"] ?? "";
-            const resBody = attrs["http.response.body"] ?? "";
             const duration = (span.endTimeMs ?? 0) - (span.startTimeMs ?? 0);
-            const attrString = Object.entries(attrs)
+            const reqBodyRaw = attrs["http.request.body"] ?? "";
+            const resBodyRaw = attrs["http.response.body"] ?? "";
+            const attrStringRaw = Object.entries(attrs)
               .map(([k, v]) => `${k}=${v}`)
               .join(" · ");
+
+            const reqBody = escapeHtml(reqBodyRaw);
+            const resBody = escapeHtml(resBodyRaw);
+            const attrString = escapeHtml(attrStringRaw);
             const statusClass = span.status === "OK" ? "status-ok" : "status-error";
             const dotClass = span.status === "OK" ? "status-ok-dot" : "status-error-dot";
             return `
@@ -418,10 +441,12 @@
                   <span class="pill alt">${method || "REQ"}</span>
                   <span class="muted">${path}</span>
                 </td>
+                <td class="muted">${method || "?"}</td>
+                <td class="muted">${sessionId}</td>
                 <td class="muted">${upstream}</td>
                 <td class="muted">${duration} ms</td>
-                <td class="attrs" title="${reqBody}">${reqBody || "<empty>"}</td>
-                <td class="attrs" title="${resBody}">${resBody || "<empty>"}</td>
+                <td class="attrs" title="${reqBody}">${reqBody || "&lt;empty&gt;"}</td>
+                <td class="attrs" title="${resBody}">${resBody || "&lt;empty&gt;"}</td>
                 <td class="attrs" title="${attrString}">${attrString}</td>
               </tr>
             `;
@@ -465,6 +490,8 @@
             const attrs = span.attributes || {};
             const route = attrs["mcp.route_name"] ?? "";
             const transport = attrs["mcp.transport"] ?? "";
+            const method = attrs["http.request.method"] ?? "";
+            const sessionId = attrs["mcp.session_id"] ?? "";
             const reqBody = attrs["http.request.body"] ?? "";
             const resBody = attrs["http.response.body"] ?? "";
             const duration = (span.endTimeMs ?? 0) - (span.startTimeMs ?? 0);
@@ -474,6 +501,8 @@
               <td><span class="pill">${span.name}</span></td>
               <td class="${statusClass}">${span.status}</td>
               <td>${transport}</td>
+              <td>${method || "?"}</td>
+              <td>${sessionId}</td>
               <td>${duration} ms</td>
               <td class="attrs" title="${reqBody}">${reqBody || "<empty>"}</td>
               <td class="attrs" title="${resBody}">${resBody || "<empty>"}</td>
@@ -482,13 +511,23 @@
           .join("");
       }
 
+      function dedupe(spans) {
+        const fresh = [];
+        for (const s of spans) {
+          const span = s?.span || {};
+          const key = `${span.traceId ?? "na"}:${span.spanId ?? "na"}`;
+          if (STATE.seen.has(key)) continue;
+          STATE.seen.add(key);
+          fresh.push(s);
+        }
+        return fresh;
+      }
+
       function addSpans(newSpans) {
-        for (const s of newSpans) {
-          STATE.spans.unshift(s);
-        }
-        if (STATE.spans.length > STATE.max) {
-          STATE.spans.length = STATE.max;
-        }
+        const fresh = dedupe(newSpans);
+        if (!fresh.length) return;
+        const merged = [...fresh, ...STATE.spans];
+        STATE.spans = sortSpansDesc(merged).slice(0, STATE.max);
         render(STATE.spans);
         renderStats(computeStats(STATE.spans));
         renderRoutes(computeRoutes(STATE.spans));
@@ -498,7 +537,7 @@
       async function fetchSnapshot() {
         const res = await fetch("/events");
         const data = await res.json();
-        const spans = flatten(data.events || []).slice(-STATE.max).reverse();
+        const spans = sortSpansDesc(flatten(data.events || [])).slice(0, STATE.max);
         addSpans(spans);
       }
 

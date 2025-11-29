@@ -1,6 +1,7 @@
 import http from "node:http";
 import httpProxy from "http-proxy";
 import { PassThrough } from "node:stream";
+import { brotliDecompressSync, gunzipSync, inflateSync } from "node:zlib";
 import type { ListenerConfig } from "../config.js";
 import {
   parseTraceparent,
@@ -22,6 +23,8 @@ type InflightToolCall = {
   traceId: string;
   spanId: string; // internal request span id (parent for response span)
   parentSpanId?: string;
+  kind: ProxyKind;
+  transport: "mcp_sse" | "mcp_http" | "openapi";
   sessionKey: string;
   rpcId: string | number;
   toolName?: string;
@@ -76,6 +79,40 @@ function safeJsonParse(s: string) {
   }
 }
 
+function parseJsonMessages(raw: string) {
+  const messages: any[] = [];
+  const parsed = safeJsonParse(raw);
+  if (parsed !== null) {
+    if (Array.isArray(parsed)) messages.push(...parsed);
+    else messages.push(parsed);
+    return messages;
+  }
+
+  raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .forEach((line) => {
+      const item = safeJsonParse(line);
+      if (item !== null) messages.push(item);
+    });
+
+  return messages;
+}
+
+function decodeCompressedBody(buf: Buffer, encoding: string | number | string[] | undefined) {
+  const enc = Array.isArray(encoding) ? encoding[0] : encoding;
+  const value = typeof enc === "string" ? enc.toLowerCase() : "";
+  try {
+    if (value.includes("gzip")) return gunzipSync(buf);
+    if (value.includes("deflate")) return inflateSync(buf);
+    if (value.includes("br")) return brotliDecompressSync(buf);
+  } catch {
+    // fallback to original buffer if decompression fails
+  }
+  return buf;
+}
+
 export type MakeProxyServerParams = {
   kind: ProxyKind;
   listener: ListenerConfig;
@@ -88,16 +125,85 @@ export function makeProxyServer(params: MakeProxyServerParams) {
   const listenHost = listener.target_host ?? "0.0.0.0";
   const listenPort = listener.target_port;
   const targetBase = `http://${listener.host}:${listener.port}`;
+  const defaultTransport: InflightToolCall["transport"] =
+    kind === "mcp_sse" ? "mcp_sse" : kind === "openapi" ? "openapi" : "mcp_http";
 
   const inflight = new Map<string, InflightToolCall>(); // key: `${sessionKey}:${rpcId}`
   const connectionSessions = new Map<string, string>(); // connectionKey -> sessionKey (learned from POSTs)
   const lastResponses = new Map<string, string>(); // key -> last response JSON (dedupe)
+  const completed = new Set<string>(); // key -> response already recorded
+
+  const findInflight = (sessionKey: string, rpcId: string | number) => {
+    let key = `${sessionKey}:${String(rpcId)}`;
+    let call = inflight.get(key);
+
+    if (!call) {
+      const suffix = `:${String(rpcId)}`;
+      const matches = Array.from(inflight.entries()).filter(([k]) => k.endsWith(suffix));
+      if (matches.length === 1) {
+        key = matches[0][0];
+        call = matches[0][1];
+      }
+    }
+
+    return { key, call };
+  };
+
+  const recordToolResponseSpan = (call: InflightToolCall, respJSON: string, statusCode: number, errorObj?: any) => {
+    const now = Date.now();
+    const duration = now - call.startedAt;
+    const respSize = Buffer.byteLength(respJSON, "utf8");
+    const { spanId: responseSpanId } = nextSpan(call.traceId);
+    const transport = call.transport ?? defaultTransport;
+    const callKind = call.kind ?? kind;
+
+    telemetry.record({
+      traceId: call.traceId,
+      spanId: responseSpanId,
+      parentSpanId: call.spanId,
+      name: `mcp.tool/${call.toolName ?? "call"}`,
+      kind: "SERVER",
+      startTimeMs: call.startedAt,
+      endTimeMs: now,
+      status: errorObj ? "ERROR" : "OK",
+      attributes: {
+        "mcp.transport": transport,
+        "mcp.kind": callKind,
+        "mcp.rpc.id": call.rpcId,
+        "mcp.tool.name": call.toolName ?? "",
+        "mcp.session_id": call.sessionKey,
+        "mcp.proxy_id": proxyId,
+        "http.request.method": call.httpMethod,
+        "http.request.body": call.requestBody,
+        "http.response.body": respJSON,
+        "http.response.status_code": statusCode,
+        "http.response.size": respSize,
+        "url.path": call.urlPath,
+        "url.query": call.urlQuery,
+        "upstream.url": call.upstreamUrl,
+        "mcp.response.duration_ms": duration
+      },
+      error: errorObj ? { message: errorObj?.message ?? "tool_error" } : undefined
+    });
+
+    try {
+      const maybeFlush = (telemetry as any).flush;
+      if (typeof maybeFlush === "function") {
+        maybeFlush().catch((e: any) => console.warn("[proxy]", proxyId, "telemetry.flush error", e?.message));
+      }
+    } catch {}
+  };
 
   const proxy = httpProxy.createProxyServer({
     target: targetBase,
     changeOrigin: false,
     xfwd: false,
     ws: true
+  });
+
+  proxy.on("proxyRes", (proxyRes, _req, res) => {
+    // keep track of upstream encoding for proper body decoding
+    (res as any).__contentEncoding = proxyRes.headers["content-encoding"];
   });
 
   proxy.on("error", (_err, _req, res) => {
@@ -165,19 +271,9 @@ export function makeProxyServer(params: MakeProxyServerParams) {
         const connectionKey = deriveConnectionKey(req);
         let sessionKey = connectionSessions.get(connectionKey) ?? deriveSessionKey(req);
 
-        let key = `${sessionKey}:${String(msg.id)}`;
-        let call = inflight.get(key);
-
-        // Fallback: if mapping fails, try to find a unique inflight entry by rpc id suffix
-        if (!call) {
-          const suffix = `:${String(msg.id)}`;
-          const matches = Array.from(inflight.entries()).filter(([k]) => k.endsWith(suffix));
-          if (matches.length === 1) {
-            key = matches[0][0];
-            call = matches[0][1];
-            sessionKey = key.split(":")[0] ?? sessionKey;
-          }
-        }
+        const { key, call } = findInflight(sessionKey, msg.id);
+        if (completed.has(key)) return;
+        if (key.includes(":")) sessionKey = key.split(":")[0] ?? sessionKey;
 
         if (!call) {
           // keep noise low: only log if we actually have inflight items
@@ -191,7 +287,6 @@ export function makeProxyServer(params: MakeProxyServerParams) {
         const duration = now - call.startedAt;
 
         const respJSON = JSON.stringify(msg);
-        const respSize = Buffer.byteLength(respJSON, "utf8");
 
         // dedupe identical response bodies
         const last = lastResponses.get(key);
@@ -200,10 +295,8 @@ export function makeProxyServer(params: MakeProxyServerParams) {
           return;
         }
         lastResponses.set(key, respJSON);
+        completed.add(key);
         inflight.delete(key);
-
-        // record response span immediately (child of request internal span)
-        const { spanId: responseSpanId } = nextSpan(call.traceId);
 
         console.log(
           "[proxy]",
@@ -218,40 +311,7 @@ export function makeProxyServer(params: MakeProxyServerParams) {
           call.sessionKey
         );
 
-        telemetry.record({
-          traceId: call.traceId,
-          spanId: responseSpanId,
-          parentSpanId: call.spanId,
-          name: `mcp.tool/${call.toolName ?? "call"}`,
-          kind: "SERVER",
-          startTimeMs: call.startedAt,
-          endTimeMs: now,
-          status: msg.error ? "ERROR" : "OK",
-          attributes: {
-            "mcp.transport": "sse",
-            "mcp.rpc.id": call.rpcId,
-            "mcp.tool.name": call.toolName ?? "",
-            "mcp.session_id": call.sessionKey,
-            "mcp.proxy_id": proxyId,
-            "http.request.body": call.requestBody,
-            "http.response.body": respJSON,
-            "http.response.status_code": 200,
-            "http.response.size": respSize,
-            "url.path": call.urlPath,
-            "url.query": call.urlQuery,
-            "upstream.url": call.upstreamUrl,
-            "mcp.response.duration_ms": duration
-          },
-          error: msg.error ? { message: msg.error?.message ?? "tool_error" } : undefined
-        });
-
-        // flush if supported
-        try {
-          const maybeFlush = (telemetry as any).flush;
-          if (typeof maybeFlush === "function") {
-            maybeFlush().catch((e: any) => console.warn("[proxy]", proxyId, "telemetry.flush error", e?.message));
-          }
-        } catch {}
+        recordToolResponseSpan(call, respJSON, proxyRes.statusCode ?? 200, msg.error);
       } catch (e) {
         console.error("[proxy]", proxyId, "recordToolResponse unexpected error", (e as Error)?.message);
       }
@@ -323,6 +383,7 @@ export function makeProxyServer(params: MakeProxyServerParams) {
 
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     const upstreamPath = url.pathname.startsWith("/") ? url.pathname : `/${url.pathname}`;
+    const upstreamUrl = `${targetBase}${upstreamPath}${url.search}`;
 
     const isSseRequest =
       kind === "mcp_sse" &&
@@ -330,6 +391,7 @@ export function makeProxyServer(params: MakeProxyServerParams) {
       (upstreamPath.endsWith("/sse") || String(req.headers.accept || "").includes("text/event-stream"));
 
     (res as any).__isSse = isSseRequest;
+    (res as any).__transport = isSseRequest ? "mcp_sse" : defaultTransport;
 
     const capture: CaptureBuffer = {};
     const tee = new PassThrough();
@@ -354,11 +416,12 @@ export function makeProxyServer(params: MakeProxyServerParams) {
         endTimeMs: end,
         status: ok ? "OK" : "ERROR",
         attributes: {
-          "mcp.transport": kind === "mcp_sse" ? "sse" : "http",
+          "mcp.transport": defaultTransport,
+          "mcp.kind": kind,
           "http.method": req.method ?? "",
           "url.path": url.pathname,
           "url.query": url.search || "",
-          "upstream.url": `${targetBase}${upstreamPath}${url.search}`,
+          "upstream.url": upstreamUrl,
           "http.request.body": capture.requestBody ?? "",
           "http.response.body": capture.responseBody ?? "",
           "http.response.status_code": statusCode ?? 0
@@ -368,6 +431,7 @@ export function makeProxyServer(params: MakeProxyServerParams) {
 
     // capture request body to detect tools/call in POST /message
     const reqChunks: Buffer[] = [];
+    let hasToolCall = false;
     req.on("data", (chunk) => {
       reqChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     });
@@ -376,22 +440,25 @@ export function makeProxyServer(params: MakeProxyServerParams) {
       capture.requestBody = Buffer.concat(reqChunks).toString("utf-8");
 
       const body = capture.requestBody;
-      const parsed = safeJsonParse(body);
+      const parsedMessages = parseJsonMessages(body);
 
       const sessionKey = deriveSessionKey(req); // for POST /message this is stableKey(sessionId=...)
       const connectionKey = deriveConnectionKey(req);
 
       const register = (m: any) => {
         if (!isJsonRpcToolCall(m)) return;
+        hasToolCall = true;
 
         const rpcId = m.id;
         const toolName = m.params?.name as string | undefined;
+        const callTransport = defaultTransport;
 
         // Create a spanId that will act as parent for the response span
         const { spanId: toolRequestSpanId } = nextSpan(traceId);
 
         const key = `${sessionKey}:${String(rpcId)}`;
         lastResponses.delete(key);
+        completed.delete(key);
 
         // CRITICAL: teach mapping so SSE GET can find the same sessionKey as POST
         connectionSessions.set(connectionKey, sessionKey);
@@ -400,6 +467,8 @@ export function makeProxyServer(params: MakeProxyServerParams) {
           traceId,
           spanId: toolRequestSpanId,
           parentSpanId,
+          kind,
+          transport: callTransport,
           sessionKey,
           rpcId,
           toolName,
@@ -408,7 +477,7 @@ export function makeProxyServer(params: MakeProxyServerParams) {
           httpMethod: req.method ?? "POST",
           urlPath: url.pathname,
           urlQuery: url.search ? url.search.slice(1) : "",
-          upstreamUrl: `${targetBase}${upstreamPath}${url.search}`
+          upstreamUrl
         });
 
         // record internal request span (shows request payload, not counted as a “main request”)
@@ -423,20 +492,22 @@ export function makeProxyServer(params: MakeProxyServerParams) {
           status: "OK",
           attributes: {
             "mcp.tool.phase": "request",
-            "mcp.transport": "sse",
+            "mcp.transport": callTransport,
+            "mcp.kind": kind,
             "mcp.rpc.id": String(rpcId),
             "mcp.tool.name": toolName ?? "",
             "mcp.session_id": sessionKey,
             "mcp.proxy_id": proxyId,
+            "http.request.method": req.method ?? "POST",
             "http.request.body": body,
             "url.path": url.pathname,
-            "url.query": url.search ? url.search.slice(1) : ""
+            "url.query": url.search ? url.search.slice(1) : "",
+            "upstream.url": upstreamUrl
           }
         });
       };
 
-      if (Array.isArray(parsed)) parsed.forEach(register);
-      else if (parsed) register(parsed);
+      parsedMessages.forEach(register);
     });
 
     // response capture
@@ -460,19 +531,66 @@ export function makeProxyServer(params: MakeProxyServerParams) {
         const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
         respChunks.push(b);
       }
-      capture.responseBody = Buffer.concat(respChunks).toString("utf-8");
+      const rawBody = Buffer.concat(respChunks);
+      const decodedBody = decodeCompressedBody(rawBody, (res as any).__contentEncoding ?? res.getHeader("content-encoding"));
+      capture.responseBody = decodedBody.toString("utf-8");
+
+      // For HTTP transports, the tool response is delivered in this response body.
+      const maybeHandleHttpToolResponses = () => {
+        if (defaultTransport !== "mcp_http") return; // only streamable HTTP flows should emit responses here
+        if ((res as any).__toolResponseHandled) return;
+        if (!capture.responseBody || inflight.size === 0) return;
+
+        try {
+          const messages = parseJsonMessages(capture.responseBody);
+          if (!messages.length) return;
+
+          const sessionKey = deriveSessionKey(req);
+
+          for (const msg of messages) {
+            if (!msg || msg.id == null) continue;
+            if (msg.result == null && msg.error == null) continue;
+
+            const { key, call } = findInflight(sessionKey, msg.id);
+            if (completed.has(key)) continue;
+            if (!call) {
+              if (inflight.size > 0) {
+                console.log("[proxy]", proxyId, "http response: no inflight for", key, "session=", sessionKey);
+              }
+              continue;
+            }
+
+            const respJSON = JSON.stringify(msg);
+            const last = lastResponses.get(key);
+            if (last && last === respJSON) {
+              inflight.delete(key);
+              continue;
+            }
+
+            lastResponses.set(key, respJSON);
+            completed.add(key);
+            inflight.delete(key);
+
+            recordToolResponseSpan(call, respJSON, res.statusCode ?? 0, msg.error);
+          }
+          (res as any).__toolResponseHandled = true;
+        } catch (e) {
+          console.warn("[proxy]", proxyId, "http response parse error", (e as Error)?.message);
+        }
+      };
+
+      maybeHandleHttpToolResponses();
       return originalEnd(chunk, encoding as any, cb);
     };
 
-    // avoid double counting: skip main span for POST /message (we count via tool response span)
-    const shouldRecordThisMainSpan = !(
-      kind === "mcp_sse" &&
-      req.method === "POST" &&
-      (upstreamPath.includes("/message") || url.pathname.includes("/message"))
-    );
-
     res.on("finish", () => {
-      if (shouldRecordThisMainSpan) recordMain((res.statusCode ?? 0) < 500, res.statusCode);
+      const shouldRecordMain =
+        !(
+          (req.method === "POST" && (upstreamPath.includes("/message") || url.pathname.includes("/message"))) ||
+          isSseRequest ||
+          hasToolCall
+        );
+      if (shouldRecordMain) recordMain((res.statusCode ?? 0) < 500, res.statusCode);
     });
 
     // forward to upstream
@@ -504,9 +622,10 @@ export function makeProxyServer(params: MakeProxyServerParams) {
     for (const [key, call] of inflight.entries()) {
       if (now - call.startedAt > INFLIGHT_TIMEOUT_MS) {
         console.warn(`[proxy] ${proxyId} inflight timeout for ${key}`);
+        const { spanId: timeoutSpanId } = nextSpan(call.traceId);
         telemetry.record({
           traceId: call.traceId,
-          spanId: call.spanId,
+          spanId: timeoutSpanId,
           parentSpanId: call.parentSpanId,
           name: `mcp.tool/${call.toolName ?? "call"}`,
           kind: "SERVER",
@@ -515,14 +634,24 @@ export function makeProxyServer(params: MakeProxyServerParams) {
           status: "ERROR",
           attributes: {
             "mcp.timeout": true,
-            "mcp.transport": "sse",
+            "mcp.transport": call.transport ?? defaultTransport,
+            "mcp.kind": call.kind ?? kind,
             "mcp.rpc.id": String(call.rpcId),
             "mcp.session_id": call.sessionKey,
             "mcp.proxy_id": proxyId
           },
-          error: { message: "timeout waiting for SSE response" }
+          error: {
+            message:
+              (call.kind ?? kind) === "mcp_sse"
+                ? "timeout waiting for SSE response"
+                : (call.kind ?? kind) === "openapi"
+                ? "timeout waiting for OpenAPI response"
+                : "timeout waiting for HTTP response"
+          }
         });
         inflight.delete(key);
+        lastResponses.delete(key);
+        completed.delete(key);
       }
     }
   }, 10_000);

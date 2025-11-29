@@ -34,8 +34,12 @@ RUN npm install --include=dev \
 COPY backend ./backend
 COPY frontend ./frontend
 
+COPY studio/start-all.sh /app/start-all.sh
+COPY studio/start-dev.sh /app/start-dev.sh
+RUN chmod +x /app/start-all.sh /app/start-dev.sh && mkdir -p /data /app/mcp-proxy/config
+
 RUN mkdir -p /data
 
 EXPOSE 8000 8001 8002 8003 6274 6277 4000 40001 40002 40003
 
-CMD ["uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/app/start-all.sh"]

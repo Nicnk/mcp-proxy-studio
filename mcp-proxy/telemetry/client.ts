@@ -64,7 +64,12 @@ export class TelemetryClient {
     this.flushing = true;
     try {
       const batch = this.queue.splice(0, this.batchSize);
-      const payload: IngestPayload = { schemaVersion: 1, sourceId: this.sourceId, events: batch };
+      const sentAt = Date.now();
+      const enriched = batch.map((ev) => ({
+        ...ev,
+        attributes: { ...(ev.attributes ?? {}), "mcp.sent_at_ms": sentAt }
+      }));
+      const payload: IngestPayload = { schemaVersion: 1, sourceId: this.sourceId, events: enriched };
       await this.postWithRetry(payload, 3);
     } catch {
     } finally {
